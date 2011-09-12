@@ -18,12 +18,11 @@
 
 package com.mongodb;
 
-import java.net.*;
-import java.util.*;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 
-import com.mongodb.util.*;
-
-/** Aquires the address of the database(s).
+/**
+ * Represents a database address
  */
 public class DBAddress extends ServerAddress {
     
@@ -44,6 +43,7 @@ public class DBAddress extends ServerAddress {
      * </tr>
      * </table>
      * @param urlFormat
+     * @throws UnknownHostException
      */
     public DBAddress( String urlFormat )
         throws UnknownHostException {
@@ -79,28 +79,31 @@ public class DBAddress extends ServerAddress {
         return name;
     }
 
-    /** Connects to a given database using the host/port information from an existing <code>DBAddress</code>.
-     * @param other the existing <code>DBAddress</code>
-     * @param name the database to which to connect
+    /**
+     * @param other an existing <code>DBAddress</code> that gives the host and port
+     * @param dbname the database to which to connect
+     * @throws UnknownHostException
      */
     public DBAddress( DBAddress other , String dbname )
         throws UnknownHostException {
         this( other._host , other._port , dbname );
     }
 
-    /** Connects to a database with a given name at a given host.
+    /**
      * @param host host name
-     * @param name database name
+     * @param dbname database name
+     * @throws UnknownHostException
      */
     public DBAddress( String host , String dbname )
         throws UnknownHostException {
         this( host , DBPort.PORT , dbname );
     }
     
-    /** Connects to a database with a given host, port, and name
+    /**
      * @param host host name
      * @param port database port
-     * @param name database name
+     * @param dbname database name
+     * @throws UnknownHostException
      */
     public DBAddress( String host , int port , String dbname )
         throws UnknownHostException {
@@ -108,10 +111,10 @@ public class DBAddress extends ServerAddress {
         _db = dbname.trim();
     }
 
-    /** Connects to a database with a given host, port, and name
+    /**
      * @param addr host address
      * @param port database port
-     * @param name database name
+     * @param dbname database name
      */
     public DBAddress( InetAddress addr , int port , String dbname ){
         super( addr , port );
@@ -128,10 +131,12 @@ public class DBAddress extends ServerAddress {
             throw new IllegalArgumentException( name + " can't be empty" );
     }
 
+    @Override
     public int hashCode(){
         return super.hashCode() + _db.hashCode();
     }
 
+    @Override
     public boolean equals( Object other ){
         if ( other instanceof DBAddress ){
             DBAddress a = (DBAddress)other;
@@ -139,11 +144,18 @@ public class DBAddress extends ServerAddress {
                 a._port == _port &&
                 a._db.equals( _db ) &&
                 a._host.equals( _host );
+        } else if ( other instanceof ServerAddress ){
+            return other.equals(this);
         }
         return false;
     }
 
 
+    /**
+     * creates a DBAddress pointing to a different database on the same server
+     * @param name database name
+     * @return
+     */
     public DBAddress getSister( String name ){
         try {
             return new DBAddress( _host , _port , name );
@@ -153,13 +165,19 @@ public class DBAddress extends ServerAddress {
         }
     }
     
+    /**
+     * gets the database name
+     * @return
+     */
     public String getDBName(){
         return _db;
     }
 
-    /** String representation of address as host:port/dbname.
+    /**
+     * gets a String representation of address as host:port/dbname.
      * @return this address
      */
+    @Override
     public String toString(){
         return super.toString() + "/" + _db;
     }

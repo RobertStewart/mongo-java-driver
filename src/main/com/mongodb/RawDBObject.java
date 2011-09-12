@@ -18,21 +18,43 @@
 
 package com.mongodb;
 
-import java.nio.*;
-import java.util.*;
+import static com.mongodb.util.MyAsserts.assertEquals;
+import static org.bson.BSON.ARRAY;
+import static org.bson.BSON.BINARY;
+import static org.bson.BSON.BOOLEAN;
+import static org.bson.BSON.CODE;
+import static org.bson.BSON.CODE_W_SCOPE;
+import static org.bson.BSON.DATE;
+import static org.bson.BSON.EOO;
+import static org.bson.BSON.MAXKEY;
+import static org.bson.BSON.MINKEY;
+import static org.bson.BSON.NULL;
+import static org.bson.BSON.NUMBER;
+import static org.bson.BSON.NUMBER_INT;
+import static org.bson.BSON.NUMBER_LONG;
+import static org.bson.BSON.OBJECT;
+import static org.bson.BSON.OID;
+import static org.bson.BSON.REF;
+import static org.bson.BSON.REGEX;
+import static org.bson.BSON.STRING;
+import static org.bson.BSON.SYMBOL;
+import static org.bson.BSON.TIMESTAMP;
+import static org.bson.BSON.UNDEFINED;
 
-import org.bson.*;
-import org.bson.types.*;
+import java.nio.ByteBuffer;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 
-import static com.mongodb.Bytes.*;
-import static com.mongodb.util.MyAsserts.*;
+import org.bson.BSONObject;
+import org.bson.types.ObjectId;
 
-import com.mongodb.util.*;
-/** This object wraps the binary object format ("BSON") used for the transport of serialized objects 
-   to / from the Mongo database.
-
-   http://www.mongodb.org/display/DOCS/BSON
-*/
+/**
+ * This object wraps the binary object format ("BSON") used for the transport of serialized objects to / from the Mongo database.
+ */
 public class RawDBObject implements DBObject {
 
     RawDBObject( ByteBuffer buf ){
@@ -53,12 +75,13 @@ public class RawDBObject implements DBObject {
         return e.getObject();
     }
 
+    @SuppressWarnings("unchecked")
     public Map toMap() {
         Map m = new HashMap();
         Iterator i = this.keySet().iterator();
         while (i.hasNext()) {
             Object s = i.next();
-            m.put(s, this.get(s+""));
+            m.put(s, this.get(String.valueOf(s)));
         }
         return m;
     }
@@ -82,6 +105,7 @@ public class RawDBObject implements DBObject {
     /**
      * @deprecated
      */
+    @Deprecated
     public boolean containsKey( String key ){
         return containsField(key);
     }
@@ -103,6 +127,7 @@ public class RawDBObject implements DBObject {
         
         return keys;
     }
+
     String _readCStr( final int start ){
 	return _readCStr( start , null );
     }
@@ -181,6 +206,7 @@ public class RawDBObject implements DBObject {
         throw new RuntimeException( "RawDBObject can't be a partial object" );
     }
 
+    @Override
     public String toString(){
         return "Object";
     }
@@ -218,6 +244,8 @@ public class RawDBObject implements DBObject {
                 break;
             case REF:
                 size += 12;
+                size += 4 + _buf.getInt( _dataStart );
+                break;
             case SYMBOL:
             case CODE:
             case STRING:

@@ -18,14 +18,14 @@
 
 package com.mongodb;
 
-import java.util.*;
+import java.util.Map;
 
-import com.mongodb.util.*;
+import org.bson.BasicBSONObject;
 
-import org.bson.*;
+import com.mongodb.util.JSON;
 
 /**
- * A simple implementation of <code>DBObject</code>.  
+ * a basic implementation of bson object that is mongo specific.
  * A <code>DBObject</code> can be created as follows, using this class:
  * <blockquote><pre>
  * DBObject obj = new BasicDBObject();
@@ -33,15 +33,25 @@ import org.bson.*;
  * </pre></blockquote>
  */
 public class BasicDBObject extends BasicBSONObject implements DBObject {
+
+    private static final long serialVersionUID = -4415279469780082174L;
     
     /**
      *  Creates an empty object.
      */
     public BasicDBObject(){
     }
+    
+    /**
+     * creates an empty object
+     * @param size an estimate of number of fields that will be inserted
+     */
+    public BasicDBObject(int size){
+    	super(size);
+    }
 
     /**
-     * Convenience CTOR
+     * creates an object with the given key/value
      * @param key  key under which to store
      * @param value value to stor
      */
@@ -50,40 +60,50 @@ public class BasicDBObject extends BasicBSONObject implements DBObject {
     }
 
     /**
-     * Creates a DBObject from a map.
+     * Creates an object from a map.
      * @param m map to convert
      */
     public BasicDBObject(Map m) {
         super(m);
     }
 
-    /** Checks if this object is ready to be saved.
-     * @return if the object is incomplete
-     */
     public boolean isPartialObject(){
         return _isPartialObject;
     }
 
-    /** Returns a JSON serialization of this object
-     * @return JSON serialization
-     */    
-    public String toString(){
-        return JSON.serialize( this );
-    }
-
-    /** Sets that this object is incomplete and should not be saved.
-     */
     public void markAsPartialObject(){
         _isPartialObject = true;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * Returns a JSON serialization of this object
+     * @return JSON serialization
+     */    
+    @Override
+    public String toString(){
+        return JSON.serialize( this );
+    }
+
     @Override
     public BasicDBObject append( String key , Object val ){
         put( key , val );
         return this;
     }
 
-
+    public Object copy() {
+        // copy field values into new object
+        BasicDBObject newobj = new BasicDBObject(this.toMap());
+        // need to clone the sub obj
+        for (String field : keySet()) {
+            Object val = get(field);
+            if (val instanceof BasicDBObject) {
+                newobj.put(field, ((BasicDBObject)val).copy());
+            } else if (val instanceof BasicDBList) {
+                newobj.put(field, ((BasicDBList)val).copy());
+            }
+        }
+        return newobj;
+    }
+    
     private boolean _isPartialObject = false;
 }

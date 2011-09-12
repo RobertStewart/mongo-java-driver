@@ -18,11 +18,20 @@
 
 package com.mongodb.util;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
-import java.lang.management.*;
-import javax.management.*;
+import javax.management.Attribute;
+import javax.management.AttributeList;
+import javax.management.DynamicMBean;
+import javax.management.MBeanAttributeInfo;
+import javax.management.MBeanInfo;
 
 public abstract class SimplePool<T> implements DynamicMBean {
 
@@ -48,6 +57,14 @@ public abstract class SimplePool<T> implements DynamicMBean {
         _maxTotal = maxTotal;
         _trackLeaks = trackLeaks || TRACK_LEAKS;
         _debug = debug;
+        _mbeanInfo = new MBeanInfo( this.getClass().getName() , _name , 
+                new MBeanAttributeInfo[]{
+                    new MBeanAttributeInfo( "name" , "java.lang.String" , "name of pool" , true , false , false ) , 
+                    new MBeanAttributeInfo( "size" , "java.lang.Integer" , "total size of pool" , true , false , false ) , 
+                    new MBeanAttributeInfo( "available" , "java.lang.Integer" , "total connections available" , true , false , false ) , 
+                    new MBeanAttributeInfo( "inUse" , "java.lang.Integer" , "number connections in use right now" , true , false , false ) , 
+                    new MBeanAttributeInfo( "everCreated" , "java.lang.Integer" , "number connections ever created" , true , false , false ) 
+                } , null , null , null );
         
     }
 
@@ -59,7 +76,7 @@ public abstract class SimplePool<T> implements DynamicMBean {
     /** 
      * callback to determine if an object is ok to be added back to the pool or used
      * will be called when something is put back into the queue and when it comes out
-     * @return true iff the object is ok to be added back to pool
+     * @return true if the object is ok to be added back to pool
      */
     public boolean ok( T t ){
         return true;
@@ -139,7 +156,6 @@ public abstract class SimplePool<T> implements DynamicMBean {
     public T get( long waitTime ){
         final T t = _get( waitTime );
         if ( t != null ){
-            _consecutiveSleeps = 0;
             if ( _trackLeaks ){
                 Throwable stack = new Throwable();
                 stack.fillInStackTrace();
@@ -200,11 +216,6 @@ public abstract class SimplePool<T> implements DynamicMBean {
 	    if ( waitTime > 0 && totalSlept >= waitTime )
 		return null;
 	    
-            if ( _consecutiveSleeps > 100 && totalSlept > _sleepTime * 2 )
-                _gcIfNeeded();
-
-            _consecutiveSleeps++;
-            
             long start = System.currentTimeMillis();
             try {
                 _waiting.tryAcquire( _sleepTime , TimeUnit.MILLISECONDS );
@@ -301,14 +312,7 @@ public abstract class SimplePool<T> implements DynamicMBean {
     }
 
     public MBeanInfo getMBeanInfo(){
-        return new MBeanInfo( this.getClass().getName() , _name , 
-                              new MBeanAttributeInfo[]{
-                                  new MBeanAttributeInfo( "name" , "java.lang.String" , "name of pool" , true , false , false ) , 
-                                  new MBeanAttributeInfo( "size" , "java.lang.Integer" , "total size of pool" , true , false , false ) , 
-                                  new MBeanAttributeInfo( "available" , "java.lang.Integer" , "total connections available" , true , false , false ) , 
-                                  new MBeanAttributeInfo( "inUse" , "java.lang.Integer" , "number connections in use right now" , true , false , false ) , 
-                                  new MBeanAttributeInfo( "everCreated" , "java.lang.Integer" , "numbe connections ever created" , true , false , false ) 
-                              } , null , null , null );
+        return _mbeanInfo;
     }
 
     public Object invoke(String actionName, Object[] params, String[] signature){
@@ -341,6 +345,7 @@ public abstract class SimplePool<T> implements DynamicMBean {
     protected final int _maxTotal;
     protected final boolean _trackLeaks;
     protected final boolean _debug;
+    protected final MBeanInfo _mbeanInfo;
 
     private final List<T> _avail = new ArrayList<T>();
     protected final List<T> _availSafe = Collections.unmodifiableList( _avail );
@@ -351,17 +356,5 @@ public abstract class SimplePool<T> implements DynamicMBean {
 
     private int _everCreated = 0;
     private int _trackPrintCount = 0;
-    private int _consecutiveSleeps = 0;
-
-
-    private static void _gcIfNeeded(){
-        final long now = System.currentTimeMillis();
-        if ( now < _nextGC )
-            return;
-
-        _nextGC = now + 5000;
-        System.gc();
-    }
-    private static long _nextGC = 0;
     
 }

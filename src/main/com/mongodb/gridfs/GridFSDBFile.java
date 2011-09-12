@@ -18,27 +18,61 @@
 
 package com.mongodb.gridfs;
 
-import com.mongodb.*;
-import com.mongodb.util.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
-import java.io.*;
-import java.util.*;
+import com.mongodb.BasicDBObject;
+import com.mongodb.BasicDBObjectBuilder;
+import com.mongodb.DBObject;
+import com.mongodb.MongoException;
 
+/**
+ * This class enables to retrieve a GridFS file metadata and content.
+ * Operations include:
+ * - writing data to a file on disk or an OutputStream
+ * - getting each chunk as a byte array
+ * - getting an InputStream to stream the data into
+ * @author antoine
+ */
 public class GridFSDBFile extends GridFSFile {
     
     
+    /**
+     * Returns an InputStream from which data can be read
+     * @return
+     */
     public InputStream getInputStream(){
         return new MyInputStream();
     }
 
-
+    /**
+     * Writes the file's data to a file on disk
+     * @param filename the file name on disk
+     * @return
+     * @throws IOException
+     */
     public long writeTo( String filename ) throws IOException {
         return writeTo( new File( filename ) );
     }
+    /**
+     * Writes the file's data to a file on disk
+     * @param f the File object
+     * @return
+     * @throws IOException
+     */
     public long writeTo( File f ) throws IOException {
         return writeTo( new FileOutputStream( f ) );
     }
 
+    /**
+     * Writes the file's data to an OutputStream
+     * @param out the OutputStream
+     * @return
+     * @throws IOException
+     */
     public long writeTo( OutputStream out )
         throws IOException {
         final int nc = numChunks();

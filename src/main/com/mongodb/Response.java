@@ -18,17 +18,22 @@
 
 package com.mongodb;
 
-import java.io.*;
-import java.util.*;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 
-import org.bson.*;
-import org.bson.io.*;
+import org.bson.io.Bits;
 
 class Response {
-    
-    Response( DBCollection collection ,  InputStream in, BSONDecoder decoder)
+
+    Response( ServerAddress addr , DBCollection collection ,  InputStream in, DBDecoder decoder)
         throws IOException {
-        _collection = collection;
+
+        _host = addr;
 
         byte[] b = new byte[36];
         Bits.readFully(in, b);
@@ -53,14 +58,12 @@ class Response {
         else
             _objects = new ArrayList<DBObject>( _num );
 
-        DBCallback c = DBCallback.FACTORY.create( _collection );        
-        
-        for ( int i=0; i<_num; i++ ){
+        for ( int i=0; i < _num; i++ ){
             if ( user._toGo < 5 )
-                throw new IOException( "should have more obejcts, but only " + user._toGo + " bytes left" );
-            c.reset();
-            decoder.decode( user , c );
-            _objects.add( c.dbget() );
+                throw new IOException( "should have more objects, but only " + user._toGo + " bytes left" );
+            // TODO: By moving to generics, you can remove these casts (and requirement to impl DBOBject).
+
+            _objects.add( decoder.decode( user, collection ) );
         }
 
         if ( user._toGo != 0 )
@@ -73,7 +76,7 @@ class Response {
     public int size(){
         return _num;
     }
-    
+
     public DBObject get( int i ){
         return _objects.get( i );
     }
@@ -81,30 +84,30 @@ class Response {
     public Iterator<DBObject> iterator(){
         return _objects.iterator();
     }
-    
+
     public boolean hasGetMore( int queryOptions ){
-        if ( _cursor <= 0 )
+        if ( _cursor == 0 )
             return false;
-        
+
         if ( _num > 0 )
             return true;
 
         if ( ( queryOptions & Bytes.QUERYOPTION_TAILABLE ) == 0 )
             return false;
-            
+
         // have a tailable cursor
 
         if ( ( _flags & Bytes.RESULTFLAG_AWAITCAPABLE ) > 0 && ( queryOptions & Bytes.QUERYOPTION_AWAITDATA ) > 0 )
             return true;
-        
+
         try {
             Thread.sleep( 500 );
         }
         catch ( Exception e ){}
-        
+
         return true;
     }
-    
+
     public long cursor(){
         return _cursor;
     }
@@ -112,16 +115,16 @@ class Response {
     public ServerError getError(){
         if ( _num != 1 )
             return null;
-        
+
         DBObject obj = get(0);
-        
+
         if ( ServerError.getMsg( obj , null ) == null )
             return null;
-        
+
         return new ServerError( obj );
     }
-    
-    class MyInputStream extends InputStream {
+
+    static class MyInputStream extends InputStream {
         MyInputStream( InputStream in , int max ){
             _in = in;
             _toGo = max;
@@ -137,10 +140,10 @@ class Response {
 
             if ( _toGo <= 0 )
                 return -1;
-                
+
             int val = _in.read();
             _toGo--;
-            
+
             return val;
         }
 
@@ -167,18 +170,19 @@ class Response {
         return "flags:" + _flags + " _cursor:" + _cursor + " _startingFrom:" + _startingFrom + " _num:" + _num ;
     }
 
-    final DBCollection _collection;
-    
+    final ServerAddress _host;
+
     final int _len;
     final int _id;
     final int _responseTo;
     final int _operation;
-    
+
     final int _flags;
-    final long _cursor;
+    long _cursor;
     final int _startingFrom;
     final int _num;
-    
+
     final List<DBObject> _objects;
+
 
 }

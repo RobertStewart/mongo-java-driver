@@ -1,9 +1,25 @@
 // BasicBSONCallback.java
 
+/**
+ *      Copyright (C) 2008 10gen Inc.
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ */
+
 package org.bson;
 
 import java.util.*;
-import java.util.regex.*;
+import java.util.regex.Pattern;
 
 import org.bson.types.*;
 
@@ -17,14 +33,18 @@ public class BasicBSONCallback implements BSONCallback {
         return new BasicBSONObject();
     }
 
+    protected BSONObject createList() {
+        return new BasicBSONList();
+    }
+
     public BSONCallback createBSONCallback(){
         return new BasicBSONCallback();
     }
 
     public BSONObject create( boolean array , List<String> path ){
         if ( array )
-            return new BasicBSONList();
-        return new BasicBSONObject();
+            return createList();
+        return create();
     }
 
     public void objectStart(){
@@ -80,10 +100,10 @@ public class BasicBSONCallback implements BSONCallback {
     }
 
     public void gotMinKey( String name ){
-        cur().put( name , "MinKey" );
+        cur().put( name , new MinKey() );
     }
     public void gotMaxKey( String name ){
-        cur().put( name , "MaxKey" );
+        cur().put( name , new MaxKey() );
     }
     
     public void gotBoolean( String name , boolean v ){
@@ -126,12 +146,16 @@ public class BasicBSONCallback implements BSONCallback {
         _put( name , new BasicBSONObject( "$ns" , ns ).append( "$id" , id ) );
     }
 
-    public void gotBinaryArray( String name , byte[] b ){
-        _put( name , b );
+    @Deprecated
+    public void gotBinaryArray( String name , byte[] data ){
+        gotBinary( name, BSON.B_GENERAL, data );
     }
     
     public void gotBinary( String name , byte type , byte[] data ){
-        _put( name , new Binary( type , data ) );
+        if( type == BSON.B_GENERAL || type == BSON.B_BINARY )
+            _put( name , data );
+        else
+            _put( name , new Binary( type , data ) );
     }
     
     public void gotUUID( String name , long part1, long part2){
@@ -154,6 +178,12 @@ public class BasicBSONCallback implements BSONCallback {
         return _stack.getLast();
     }
     
+    protected String curName(){
+        if (_nameStack.isEmpty())
+            return null;
+        return _nameStack.getLast();
+    }
+
     public Object get(){
 	return _root;
     }

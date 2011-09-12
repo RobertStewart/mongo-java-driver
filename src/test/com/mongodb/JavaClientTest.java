@@ -17,14 +17,16 @@
 
 package com.mongodb;
 
-import java.io.*;
-import java.nio.*;
+import java.io.IOException;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.regex.*;
+import java.util.regex.Pattern;
 
-import org.bson.*;
+import org.bson.BSON;
+import org.bson.Transformer;
 import org.bson.types.*;
-import org.testng.annotations.*;
+import org.testng.annotations.Test;
 
 import com.mongodb.util.*;
 
@@ -49,7 +51,6 @@ public class JavaClientTest extends TestCase {
         m.put( "state" , "ny" );
         
         c.save( m );
-        System.out.println( m.keySet() );
         assert( m.containsField( "_id" ) );
 
         Map out = (Map)(c.findOne( m.get( "_id" )));
@@ -184,12 +185,61 @@ public class JavaClientTest extends TestCase {
             bb.order( Bytes.ORDER );
             bb.putInt( 5 );
             bb.put( "eliot".getBytes() );
-            out.put( "a" , new Binary( (byte)2 , raw ) );
+            out.put( "a" , "eliot".getBytes() );
             c.save( out );
             
             out = c.findOne();
             b = (byte[])(out.get( "a" ) );
             assertEquals( "eliot" , new String( b ) );
+
+            out.put( "a" , new Binary( (byte)111 , raw ) );
+            c.save( out );
+            Binary blah = (Binary)c.findOne().get( "a" );
+            assertEquals( 111 , blah.getType() );
+            assertEquals( Util.toHex( raw ) , Util.toHex( blah.getData() ) );
+        }
+        
+    }
+
+    @Test
+    public void testMinMaxKey()
+        throws MongoException {
+        DBCollection c = _db.getCollection( "testMinMaxKey" );
+        c.drop();
+        c.save( BasicDBObjectBuilder.start().add( "min" , new MinKey() ).add( "max" , new MaxKey() ).get() );
+
+        DBObject out = c.findOne();
+        MinKey min = (MinKey)(out.get( "min" ) );
+        MaxKey max = (MaxKey)(out.get( "max" ) );
+        assertTrue( JSON.serialize(min).contains("$minKey") );
+        assertTrue( JSON.serialize(max).contains("$maxKey") );
+    }
+    
+    @Test
+    public void testBinaryOld()
+        throws MongoException {
+        DBCollection c = _db.getCollection( "testBinary" );
+        c.drop();
+        c.save( BasicDBObjectBuilder.start().add( "a" , "eliot".getBytes() ).get() );
+        
+        DBObject out = c.findOne();
+        byte[] b = (byte[])(out.get( "a" ) );
+        assertEquals( "eliot" , new String( b ) );
+        
+        {
+            byte[] raw = new byte[9];
+            ByteBuffer bb = ByteBuffer.wrap( raw );
+            bb.order( Bytes.ORDER );
+            bb.putInt( 5 );
+            bb.put( "eliot".getBytes() );
+            out.put( "a" , new Binary( BSON.B_BINARY , "eliot".getBytes() ) );
+            c.save( out );
+
+            // objects of subtype B_BINARY or B_GENERAL should becomes byte[]
+            out = c.findOne();
+//            Binary blah = (Binary)(out.get( "a" ) );
+            byte[] bytes = (byte[]) out.get("a");
+            assertEquals( "eliot" , new String( bytes ) );
 
             out.put( "a" , new Binary( (byte)111 , raw ) );
             c.save( out );
@@ -238,6 +288,24 @@ public class JavaClientTest extends TestCase {
         out = c.find( null , BasicDBObjectBuilder.start().add( "a" , 1 ).get() ).next();
         assertEquals( 1 , out.get( "a" ) );
         assertNull( out.get( "b" ) );
+
+        // make sure can't insert back partial
+        try {
+            c.update(out, out);
+            assertTrue(false);
+        } catch (IllegalArgumentException ex) {
+        }
+
+        out = c.findOne( null , BasicDBObjectBuilder.start().add( "b" , 1 ).get() );
+        assertEquals( 2 , out.get( "b" ) );
+        assertNull( out.get( "a" ) );
+
+        // make sure can't insert back partial
+        try {
+            c.update(out, out);
+            assertTrue(false);
+        } catch (IllegalArgumentException ex) {
+        }
 
     }
 
@@ -307,7 +375,7 @@ public class JavaClientTest extends TestCase {
     public void testStrictWriteSetInCollection(){
         DBCollection c = _db.getCollection( "write1" );
         c.drop();
-        c.setWriteConcern( WriteConcern.STRICT );
+        c.setWriteConcern( WriteConcern.SAFE);
         c.insert( new BasicDBObject( "_id" , 1 ) );
         boolean gotError = false;
         try {
@@ -328,7 +396,7 @@ public class JavaClientTest extends TestCase {
         c.insert( new BasicDBObject( "_id" , 1 ));
         boolean gotError = false;
         try {
-            c.insert( new BasicDBObject( "_id" , 1 ) , WriteConcern.STRICT);
+            c.insert( new BasicDBObject( "_id" , 1 ) , WriteConcern.SAFE);
         }
         catch ( MongoException.DuplicateKey e ){
             gotError = true;
@@ -377,7 +445,7 @@ public class JavaClientTest extends TestCase {
         MapReduceOutput out = 
             c.mapReduce( "function(){ for ( var i=0; i<this.x.length; i++ ){ emit( this.x[i] , 1 ); } }" ,
                          "function(key,values){ var sum=0; for( var i=0; i<values.length; i++ ) sum += values[i]; return sum;}" ,
-                         null , null );
+                         "jmr1_out" , null );
         
         Map<String,Integer> m = new HashMap<String,Integer>();
         for ( DBObject r : out.results() ){
@@ -391,7 +459,62 @@ public class JavaClientTest extends TestCase {
         assertEquals( 1 , m.get( "d" ).intValue() );
                         
     }
-    
+
+    @Test
+    public void testMapReduceInline(){
+        DBCollection c = _db.getCollection( "jmr1" );
+        c.drop();
+
+        c.save( new BasicDBObject( "x" , new String[]{ "a" , "b" } ) );
+        c.save( new BasicDBObject( "x" , new String[]{ "b" , "c" } ) );
+        c.save( new BasicDBObject( "x" , new String[]{ "c" , "d" } ) );
+        
+        MapReduceOutput out = 
+            c.mapReduce( "function(){ for ( var i=0; i<this.x.length; i++ ){ emit( this.x[i] , 1 ); } }" ,
+                         "function(key,values){ var sum=0; for( var i=0; i<values.length; i++ ) sum += values[i]; return sum;}" , null, MapReduceCommand.OutputType.INLINE, null);
+        
+        Map<String,Integer> m = new HashMap<String,Integer>();
+        for ( DBObject r : out.results() ){
+            m.put( r.get( "_id" ).toString() , ((Number)(r.get( "value" ))).intValue() );
+        }
+        
+        assertEquals( 4 , m.size() );
+        assertEquals( 1 , m.get( "a" ).intValue() );
+        assertEquals( 2 , m.get( "b" ).intValue() );
+        assertEquals( 2 , m.get( "c" ).intValue() );
+        assertEquals( 1 , m.get( "d" ).intValue() );
+                        
+    }
+
+    @Test
+    public void testMapReduceInlineWScope(){
+        DBCollection c = _db.getCollection( "jmr2" );
+        c.drop();
+
+        c.save( new BasicDBObject( "x" , new String[]{ "a" , "b" } ) );
+        c.save( new BasicDBObject( "x" , new String[]{ "b" , "c" } ) );
+        c.save( new BasicDBObject( "x" , new String[]{ "c" , "d" } ) );
+        
+        Map<String, Object> scope = new HashMap<String, Object>();
+        scope.put("exclude", "a");
+        
+        MapReduceCommand mrc = new MapReduceCommand( c, "function(){ for ( var i=0; i<this.x.length; i++ ){ if(this.x[i] != exclude) emit( this.x[i] , 1 ); } }" ,
+                         "function(key,values){ var sum=0; for( var i=0; i<values.length; i++ ) sum += values[i]; return sum;}" , null, MapReduceCommand.OutputType.INLINE, null);
+        mrc.setScope( scope );
+        
+        MapReduceOutput out = c.mapReduce( mrc );
+        Map<String,Integer> m = new HashMap<String,Integer>();
+        for ( DBObject r : out.results() ){
+            m.put( r.get( "_id" ).toString() , ((Number)(r.get( "value" ))).intValue() );
+        }
+        
+        assertEquals( 3 , m.size() );
+        assertEquals( 2 , m.get( "b" ).intValue() );
+        assertEquals( 2 , m.get( "c" ).intValue() );
+        assertEquals( 1 , m.get( "d" ).intValue() );
+                        
+    }
+
     String _testMulti( DBCollection c ){
         String s = "";
         for ( DBObject z : c.find().sort( new BasicDBObject( "_id" , 1 ) ) ){
@@ -509,13 +632,15 @@ public class JavaClientTest extends TestCase {
  
     @Test
     public void testLargeBulkInsert(){
+        // max size should be obtained from server
+        int maxObjSize = _mongo.getMaxBsonObjectSize();
         DBCollection c = _db.getCollection( "largebulk" );
         c.drop();
         String s = "asdasdasd";
         while ( s.length() < 10000 )
             s += s;
         List<DBObject> l = new ArrayList<DBObject>();
-        final int num = 3 * ( Bytes.MAX_OBJECT_SIZE / s.length() );
+        final int num = 3 * ( maxObjSize / s.length() );
 
         for ( int i=0; i<num; i++ ){
             l.add( BasicDBObjectBuilder.start()
@@ -528,14 +653,14 @@ public class JavaClientTest extends TestCase {
         assertEquals( num , c.find().count() );
 
         s = l.toString();
-        assertTrue( s.length() > Bytes.MAX_OBJECT_SIZE );
+        assertTrue( s.length() > maxObjSize );
         
         boolean worked = false;
         try {
             c.save( new BasicDBObject( "foo" , s ) );
             worked = true;
         }
-        catch ( IllegalArgumentException ie ){}
+        catch ( MongoException ie ){}
         assertFalse( worked );
 
         assertEquals( num , c.find().count() );
@@ -583,13 +708,13 @@ public class JavaClientTest extends TestCase {
 
         CommandResult cr = res.getLastError( WriteConcern.FSYNC_SAFE );
         assertEquals( 1 , cr.getInt( "n" ) );
-        assertTrue( cr.containsField( "fsyncFiles" ));
+        assertTrue( cr.containsField( "fsyncFiles" ) || cr.containsField( "waited" ));
 
         CommandResult cr2 = res.getLastError( WriteConcern.FSYNC_SAFE );
         assertTrue( cr == cr2 );
 
         CommandResult cr3 = res.getLastError( WriteConcern.NONE );
-        assertTrue( cr != cr3 && cr2 != cr3 );
+        assertTrue( cr3 == cr );
 
     }
 
@@ -603,12 +728,12 @@ public class JavaClientTest extends TestCase {
         assertEquals( 1 , res.getN() );
         assertTrue( res.isLazy() );
 
-        c.setWriteConcern( WriteConcern.STRICT );
+        c.setWriteConcern( WriteConcern.SAFE);
         res = c.update( new BasicDBObject( "_id" , 1 ) , new BasicDBObject( "$inc" , new BasicDBObject( "x" , 1 ) ) );
         assertEquals( 1 , res.getN() );
         assertFalse( res.isLazy() );
     }
-    
+
     @Test
     public void testWriteResultMethodLevelWriteConcern(){
         DBCollection c = _db.getCollection( "writeresult2" );
@@ -619,9 +744,37 @@ public class JavaClientTest extends TestCase {
         assertEquals( 1 , res.getN() );
         assertTrue( res.isLazy() );
 
-        res = c.update( new BasicDBObject( "_id" , 1 ) , new BasicDBObject( "$inc" , new BasicDBObject( "x" , 1 ) ) , false , false , WriteConcern.STRICT );
+        res = c.update( new BasicDBObject( "_id" , 1 ) , new BasicDBObject( "$inc" , new BasicDBObject( "x" , 1 ) ) , false , false , WriteConcern.SAFE);
         assertEquals( 1 , res.getN() );
         assertFalse( res.isLazy() );
+    }
+
+    @Test
+    public void testWriteConcernValueOf() {
+        WriteConcern wc1 = WriteConcern.NORMAL;
+        WriteConcern wc2 = WriteConcern.valueOf( "normal" );
+        WriteConcern wc3 = WriteConcern.valueOf( "NORMAL" );
+
+        assertEquals( wc1, wc2 );
+        assertEquals( wc1, wc3 );
+        assertEquals( wc1.getW(), wc2.getW() );
+        assertEquals( wc1.getWValue(), wc2.getWValue() );
+        assertEquals( wc1.getW(), wc3.getW() );
+        assertEquals( wc1.getWValue(), wc3.getWValue() );
+    }
+
+    @Test
+    public void testWriteConcernMajority() {
+        WriteConcern wc1 = WriteConcern.MAJORITY;
+        WriteConcern wc2 = WriteConcern.valueOf( "majority" );
+        WriteConcern wc3 = WriteConcern.valueOf( "MAJORITY" );
+
+        assertEquals( wc1, wc2 );
+        assertEquals( wc1, wc3 );
+        assertEquals( wc1.getWString(), wc2.getWString() );
+        assertEquals( wc1.getWValue(), wc2.getWValue() );
+        assertEquals( wc1.getWString(), wc3.getWString() );
+        assertEquals( wc1.getWValue(), wc3.getWValue() );
     }
 
     @Test
@@ -646,7 +799,20 @@ public class JavaClientTest extends TestCase {
         assertEquals( 2 , dbObj.keySet().size());
         assertEquals( 5 , dbObj.get( "x" ));
         assertNull( c.findOne(new BasicDBObject( "_id" , 1 ) ));
-        
+
+        // test exception throwing
+        c.insert( new BasicDBObject( "a" , 1 ) );
+        try {
+            dbObj = c.findAndModify( null, null );
+            assertTrue(false, "Exception not thrown when no update nor remove");
+        } catch (MongoException e) {
+        }
+
+        try {
+            dbObj = c.findAndModify( new BasicDBObject("a", "noexist"), null );
+        } catch (MongoException e) {
+            assertTrue(false, "Exception thrown when matching record");
+        }
     }
 
     @Test
@@ -664,7 +830,56 @@ public class JavaClientTest extends TestCase {
         assertEquals( "foo.bar.zoo.dork" , c.getName() );
         
     }
+
+    @Test
+    public void testBadKey(){
+        DBCollection c = _db.getCollectionFromString( "foo" );
+        assertEquals( "foo" , c.getName() );
+
+        try {
+            c.insert(new BasicDBObject("a.b", 1));
+            assertTrue(false, "Bad key was accepted");
+        } catch (Exception e) {}
+        try {
+            c.insert(new BasicDBObject("$a", 1));
+            assertTrue(false, "Bad key was accepted");
+        } catch (Exception e) {}
+
+        try {
+            c.save(new BasicDBObject("a.b", 1));
+            assertTrue(false, "Bad key was accepted");
+        } catch (Exception e) {}
+        try {
+            c.save(new BasicDBObject("$a", 1));
+            assertTrue(false, "Bad key was accepted");
+        } catch (Exception e) {}
+
+        c.insert(new BasicDBObject("a", 1));
+        try {
+            c.update(new BasicDBObject("a", 1), new BasicDBObject("a.b", 1));
+            assertTrue(false, "Bad key was accepted");
+        } catch (Exception e) {}
+        c.update(new BasicDBObject("a", 1), new BasicDBObject("$set", new BasicDBObject("a.b", 1)));
+    }
+
+    @Test
+    public void testAllTypes(){
+        DBCollection c = _db.getCollectionFromString( "foo" );
+        c.drop();
+        String json = "{ 'str' : 'asdfasd' , 'long' : 5 , 'float' : 0.4 , 'bool' : false , 'date' : { '$date' : '2011-05-18T18:56:00Z'} , 'pat' : { '$regex' : '.*' , '$options' : ''} , 'oid' : { '$oid' : '4d83ab3ea39562db9c1ae2ae'} , 'ref' : { '$ref' : 'test.test' , '$id' : { '$oid' : '4d83ab59a39562db9c1ae2af'}} , 'code' : { '$code' : 'asdfdsa'} , 'codews' : { '$code' : 'ggggg' , '$scope' : { }} , 'ts' : { '$ts' : 1300474885 , '$inc' : 10} , 'null' :  null, 'uuid' : { '$uuid' : '60f65152-6d4a-4f11-9c9b-590b575da7b5' }}";
+        BasicDBObject a = (BasicDBObject) JSON.parse(json);
+        c.insert(a);
+        DBObject b = c.findOne();
+        assertTrue(a.equals(b));
+    }
     
+    @Test
+    public void testMongoHolder() throws MongoException, UnknownHostException {
+        Mongo m1 = Mongo.Holder.singleton().connect( new MongoURI( "mongodb://localhost" ) );
+        Mongo m2 = Mongo.Holder.singleton().connect( new MongoURI( "mongodb://localhost" ) );
+
+        assertEquals( m1, m2);
+    }
     final Mongo _mongo;
     final DB _db;
 

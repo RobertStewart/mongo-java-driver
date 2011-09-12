@@ -18,26 +18,42 @@
 
 package com.mongodb;
 
-import java.net.*;
-import java.util.*;
-
-import com.mongodb.util.*;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * mongo server address
  */
 public class ServerAddress {
     
+    /**
+     * Creates a ServerAddress with default host and port
+     * @throws UnknownHostException
+     */
     public ServerAddress()
         throws UnknownHostException {
         this( defaultHost() , defaultPort() );
     }
     
+    /**
+     * Creates a ServerAddress with default port
+     * @param host hostname
+     * @throws UnknownHostException
+     */
     public ServerAddress( String host )
         throws UnknownHostException {
         this( host , defaultPort() );
     }
 
+    /**
+     * Creates a ServerAddress
+     * @param host hostname
+     * @param port mongod port
+     * @throws UnknownHostException
+     */
     public ServerAddress( String host , int port )
         throws UnknownHostException {
         if ( host == null )
@@ -60,14 +76,27 @@ public class ServerAddress {
         _addr = new InetSocketAddress( _all[0] , _port );
     }
 
+    /**
+     * Creates a ServerAddress with default port
+     * @param addr host address
+     */
     public ServerAddress( InetAddress addr ){
         this( new InetSocketAddress( addr , defaultPort() ) );
     }
 
+    /**
+     * Creates a ServerAddress
+     * @param addr host address
+     * @param port mongod port
+     */
     public ServerAddress( InetAddress addr , int port ){
         this( new InetSocketAddress( addr , port ) );
     }
 
+    /**
+     * Creates a ServerAddress
+     * @param addr inet socket address containing hostname and port
+     */
     public ServerAddress( InetSocketAddress addr ){
         _addr = addr;
         _host = _addr.getHostName();
@@ -79,21 +108,23 @@ public class ServerAddress {
     // pairing
     // --------
 
-    /** Determines if the database at this address is paired.
+    /**
+     * Determines if the database at this address is paired.
      * @return if this address connects to a set of paired databases
      */
     boolean isPaired(){
         return _all != null && _all.length > 1;
     }
 
-    /** If this is the address of a paired database, returns addresses for
+    /**
+     * If this is the address of a paired database, returns addresses for
      * all of the databases with which it is paired.
      * @return the addresses
      * @throws RuntimeException if this address is not one of a paired database
      */
     List<ServerAddress> explode(){
         if ( _all == null || _all.length <= 1 )
-            throw new RuntimeException( "not replica set mode.  num addresses : " + _all.length );
+            throw new RuntimeException( "not replica set mode.  num addresses : " + ((_all == null) ? 0 : _all.length) );
         
         List<ServerAddress> s = new ArrayList<ServerAddress>();
         for ( int i=0; i<_all.length; i++ ){
@@ -107,7 +138,8 @@ public class ServerAddress {
     // --------
 
 
-    /** Determines whether this address is the same as a given host.
+    /**
+     * Determines whether this address is the same as a given host.
      * @param host the address to compare
      * @return if they are the same
      */
@@ -124,6 +156,7 @@ public class ServerAddress {
             _host.equalsIgnoreCase( host );
     }
 
+    @Override
     public boolean equals( Object other ){
         if ( other instanceof ServerAddress ){
             ServerAddress a = (ServerAddress)other;
@@ -131,33 +164,50 @@ public class ServerAddress {
                 a._port == _port &&
                 a._host.equals( _host );
         }
+        if ( other instanceof InetSocketAddress ){
+            return _addr.equals( other );
+        }
         return false;
     }
 
+    @Override
     public int hashCode(){
         return _host.hashCode() + _port;
     }
 
+    /**
+     * Gets the hostname
+     * @return
+     */
     public String getHost(){
         return _host;
     }
 
+    /**
+     * Gets the port number
+     * @return
+     */
     public int getPort(){
         return _port;
     }
     
+    /**
+     * Gets the underlying socket address
+     * @return
+     */
     public InetSocketAddress getSocketAddress(){
         return _addr;
     }
 
+    @Override
     public String toString(){
         return _host + ":" + _port;
     }
 
     final String _host;
     final int _port;
-    final InetSocketAddress _addr;
-    final InetAddress[] _all;
+    InetSocketAddress _addr;
+    InetAddress[] _all;
 
     // --------
     // static helpers
@@ -173,18 +223,33 @@ public class ServerAddress {
         return InetAddress.getAllByName( host );
     }
     
-    /** Returns the default database host.
-     * @return the db_ip environmental variable, or "127.0.0.1" as a default
+    /**
+     * Returns the default database host: db_ip environment variable, or "127.0.0.1"
+     * @return
      */
     public static String defaultHost(){
         return "127.0.0.1";
     }
 
-    /** Returns the default port that the database runs on.
-     * @return the db_port environmental variable, or 27017 as a default
+    /** Returns the default database port: db_port environment variable, or 27017 as a default
+     * @return
      */
     public static int defaultPort(){
         return DBPort.PORT;
+    }
+
+    /**
+     * attempts to update the internal InetAddress by resolving the host name.
+     * @return true if host resolved to a new IP that is different from old one, false otherwise
+     * @throws UnknownHostException
+     */
+    boolean updateInetAddr() throws UnknownHostException {
+        InetSocketAddress oldaddr = _addr;
+        _all = _getAddress( _host );
+        _addr = new InetSocketAddress( _all[0] , _port );
+        if (!_addr.equals(oldaddr))
+            return true;
+        return false;
     }
     
 }

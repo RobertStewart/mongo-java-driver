@@ -1,5 +1,21 @@
 // BSON.java
 
+/**
+ *      Copyright (C) 2008 10gen Inc.
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ */
+
 package org.bson;
 
 import java.nio.charset.*;
@@ -69,7 +85,7 @@ public class BSON {
                     _warnUnsupportedRegex( flag.unsupported );
             }
             else {
-                throw new IllegalArgumentException( "unrecognized flag: "+flags.charAt( i ) );
+                throw new IllegalArgumentException( "unrecognized flag ["+flags.charAt( i ) + "] " + (int)flags.charAt(i) );
             }
         }
         return fint;
@@ -78,7 +94,7 @@ public class BSON {
     public static int regexFlag( char c ){
         RegexFlag flag = RegexFlag.getByCharacter( c );
         if ( flag == null )
-            throw new IllegalArgumentException( "unrecognized flag: " + c );
+            throw new IllegalArgumentException( "unrecognized flag [" + c + "]" );
 
         if ( flag.unsupported != null ){
             _warnUnsupportedRegex( flag.unsupported );
@@ -150,7 +166,7 @@ public class BSON {
     // --- (en|de)coding hooks -----
 
     public static void addEncodingHook( Class c , Transformer t ){
-        _anyHooks = true;
+        _encodeHooks = true;
         List<Transformer> l = _encodingHooks.get( c );
         if ( l == null ){
             l = new Vector<Transformer>();
@@ -160,7 +176,7 @@ public class BSON {
     }
     
     public static void addDecodingHook( Class c , Transformer t ){
-        _anyHooks = true;
+        _decodeHooks = true;
         List<Transformer> l = _decodingHooks.get( c );
         if ( l == null ){
             l = new Vector<Transformer>();
@@ -170,7 +186,7 @@ public class BSON {
     }
 
     public static Object applyEncodingHooks( Object o ){
-        if ( ! _anyHooks )
+        if ( ! _anyHooks() )
             return o;
 
         if ( _encodingHooks.size() == 0 || o == null )
@@ -183,7 +199,7 @@ public class BSON {
     }
 
     public static Object applyDecodingHooks( Object o ){
-        if ( ! _anyHooks || o == null )
+        if ( ! _anyHooks() || o == null )
             return o;
 
         List<Transformer> l = _decodingHooks.get( o.getClass() );
@@ -193,14 +209,80 @@ public class BSON {
         return o;
     }
 
+   /**
+     * Returns the encoding hook(s) associated with the specified class
+     * 
+     */
+    public static List<Transformer> getEncodingHooks( Class c ){
+        return _encodingHooks.get( c );
+    }
 
-    public static void clearAllHooks(){
-        _anyHooks = false;
+    /**
+     * Clears *all* encoding hooks.
+     */
+    public static void clearEncodingHooks(){
+        _encodeHooks = false;
         _encodingHooks.clear();
+    }
+
+    /** 
+     * Remove all encoding hooks for a specific class.
+     */
+    public static void removeEncodingHooks( Class c ){
+        _encodingHooks.remove( c );
+    }
+
+    /** 
+     * Remove a specific encoding hook for a specific class.
+     */
+    public static void removeEncodingHook( Class c , Transformer t ){
+        getEncodingHooks( c ).remove( t );
+    }
+
+   /**
+     * Returns the decoding hook(s) associated with the specific class
+     */
+    public static List<Transformer> getDecodingHooks( Class c ){
+        return _decodingHooks.get( c );
+    }
+
+    /**
+     * Clears *all* decoding hooks.
+     */
+    public static void clearDecodingHooks(){
+        _decodeHooks = false;
         _decodingHooks.clear();
     }
 
-    private static boolean _anyHooks = false;
+    /** 
+     * Remove all decoding hooks for a specific class.
+     */
+    public static void removeDecodingHooks( Class c ){
+        _decodingHooks.remove( c );
+    }
+
+    /** 
+     * Remove a specific encoding hook for a specific class.
+     */
+    public static void removeDecodingHook( Class c , Transformer t ){
+        getDecodingHooks( c ).remove( t );
+    }
+
+
+    public static void clearAllHooks(){
+        clearEncodingHooks();
+        clearDecodingHooks();
+    }
+
+    /**
+     * Returns true if any encoding or decoding hooks are loaded.
+     */
+    private static boolean _anyHooks(){
+        return _encodeHooks || _decodeHooks;
+    }
+
+    private static boolean _encodeHooks = false;
+    private static boolean _decodeHooks = false;
     static ClassMap<List<Transformer>> _encodingHooks = 
 	new ClassMap<List<Transformer>>();
         
@@ -234,7 +316,7 @@ public class BSON {
 
     static ThreadLocal<BSONDecoder> _staticDecoder = new ThreadLocal<BSONDecoder>(){
         protected BSONDecoder initialValue(){
-            return new BSONDecoder();
+            return new BasicBSONDecoder();
         }
     };
 

@@ -18,11 +18,12 @@
 
 package com.mongodb;
 
-import org.bson.types.*;
+import org.bson.types.ObjectId;
 
 /**
  * @deprecated
  */
+@Deprecated
 public class DBPointer extends DBRefBase {
     
     static final boolean D = Boolean.getBoolean( "DEBUG.DBPOINTER" );

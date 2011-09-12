@@ -27,7 +27,7 @@ import com.mongodb.util.*;
 import org.bson.*;
 import org.bson.types.*;
 
-
+@SuppressWarnings({"unchecked", "deprecation"})
 public class DBObjectTest extends TestCase {
 
     public DBObjectTest() {
@@ -153,7 +153,7 @@ public class DBObjectTest extends TestCase {
             _colTest.save(dbObject);
         }
         catch (IllegalArgumentException e) {
-            if (e.getMessage().equals("fields stored in the db can't have . in them")) {
+            if (e.getMessage().startsWith("fields stored in the db can't have . in them")) {
                 thrown = true;
             }
         }

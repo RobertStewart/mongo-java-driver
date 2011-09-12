@@ -16,18 +16,18 @@
 
 package com.mongodb;
 
+import java.io.*;
 import java.util.*;
-import java.util.regex.*;
-import java.io.IOException;
-
-import org.testng.annotations.Test;
-
-import com.mongodb.util.*;
+import java.util.regex.Pattern;
 
 import org.bson.*;
-import org.bson.types.*;
+import org.bson.types.ObjectId;
+import org.testng.annotations.Test;
+
+import com.mongodb.util.TestCase;
 
 
+@SuppressWarnings("unchecked")
 public class ByteTest extends TestCase {
 
     public ByteTest()
@@ -176,10 +176,12 @@ public class ByteTest extends TestCase {
         o.put( "bytes", barray );
 
         byte[] encoded = BSON.encode( o );
-        assertEquals( 277 , encoded.length );
+        assertEquals( 273 , encoded.length );
 
         BSONObject read = BSON.decode( encoded );
         byte[] b = (byte[])read.get( "bytes" );
+        
+        assertEquals(barray.length, b.length);
         for( int i=0; i<256; i++ ) {
             assertEquals( b[i], barray[i] );
         }
@@ -196,6 +198,8 @@ public class ByteTest extends TestCase {
 
         BSONObject read = BSON.decode( encoded );
         assertEquals( o.keySet().size() - transient_fields, read.keySet().size() );
+        if ( transient_fields == 0 )
+            assertEquals( o , read );
     }
 
     @Test(groups = {"basic"})
@@ -268,6 +272,11 @@ public class ByteTest extends TestCase {
         o.put( "foo", "bar" );
         go( o, 5, 2 );
         t.clear();
+        
+        o = new BasicDBObject();
+        o.put( "z" , "" );
+        go( o, 13 );
+        t.clear();
 
         // $where
         /*o = new BasicDBObject();
@@ -278,7 +287,7 @@ public class ByteTest extends TestCase {
         obj = 5;
         o = new BasicDBObject();
         o.put( "$where", obj );
-        assertEquals( Bytes.getType( obj ), Bytes.NUMBER );
+        assertEquals( Bytes.getType( obj ), Bytes.NUMBER_INT );
         go( o, 17 );
     }
 
@@ -395,12 +404,85 @@ public class ByteTest extends TestCase {
         assertEquals( x , Bytes.decode( b ) );
     }
 
+    @Test
+    public void testMany()
+        throws IOException {
+
+        DBObject orig = new BasicDBObject();
+        orig.put( "a" , 5 );
+        orig.put( "ab" , 5.1 );
+        orig.put( "abc" , 5123L );
+        orig.put( "abcd" , "asdasdasd" );
+        orig.put( "abcde" , "asdasdasdasdasdasdasdasd" );
+        orig.put( "abcdef" , Arrays.asList( new String[]{ "asdasdasdasdasdasdasdasd" , "asdasdasdasdasdasdasdasd" } ) );
+        
+        byte[] b = Bytes.encode( orig );
+        final int n = 1000;
+        
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for ( int i=0; i<n; i++ )
+            out.write( b );
+        
+        ByteArrayInputStream in = new ByteArrayInputStream( out.toByteArray() );
+        BSONDecoder d = new BasicBSONDecoder();
+        for ( int i=0; i<n; i++ ){
+            BSONObject x = d.readObject( in );
+            assertEquals( orig , x );
+        }
+        assertEquals( -1 , in.read() );
+    }
+
+    int _fix( int x ){
+        if ( x < 0 )
+            return -1;
+        if ( x > 0 ) 
+            return 1;
+        return 0;
+    }
+
+    @Test
+    public void testObjcetIdCompare(){
+        Random r = new Random( 171717 );
+        
+        List<ObjectId> l = new ArrayList<ObjectId>();
+        for ( int i=0; i<10000; i++ ){
+            l.add( new ObjectId( new Date( Math.abs( r.nextLong() ) ) , Math.abs( r.nextInt() ) , Math.abs( r.nextInt() ) ) );
+        }
+
+        for ( int i=1; i<l.size(); i++ ){
+            int a = _fix( l.get(0).compareTo( l.get(i) ) );
+            int b = _fix( l.get(0).toString().compareTo( l.get(i).toString() ) );
+            if ( a == b )
+                continue;
+            throw new RuntimeException( "broken [" + l.get(0) + "] [" + l.get(i) + "] a: " + a + " b: " + b );
+        }
+
+        DBCollection c = _db.getCollection( "testObjcetIdCompare" );
+        c.drop();
+        
+        for ( ObjectId o : l ){
+            c.insert( new BasicDBObject( "_id" , o ) );
+        }
+
+        Collections.sort( l );
+        
+        List<DBObject> out = c.find().sort( new BasicDBObject( "_id" , 1 ) ).toArray();
+        
+        assertEquals( l.size() , out.size() );
+        
+        for ( int i=0; i<l.size(); i++ ){
+            assertEquals( l.get(i) , out.get(i).get( "_id" ) );
+        }
+        
+            
+    }
+
     final DB _db;
 
     public static void main( String args[] )
         throws Exception {
         (new ByteTest()).runConsole();
-
+        
     }
 
 }

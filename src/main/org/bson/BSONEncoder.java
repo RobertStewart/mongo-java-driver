@@ -1,19 +1,38 @@
 // BSONEncoder.java
 
+/**
+ *      Copyright (C) 2008 10gen Inc.
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ */
+
 package org.bson;
 
 import static org.bson.BSON.*;
 
-import java.lang.reflect.*;
-import java.nio.*;
-import java.nio.charset.*;
+import java.lang.reflect.Array;
+import java.nio.Buffer;
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.concurrent.atomic.*;
-import java.util.regex.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
 
-import org.bson.io.*;
+import org.bson.io.BasicOutputBuffer;
+import org.bson.io.OutputBuffer;
 import org.bson.types.*;
+
+import com.mongodb.DBRefBase;
 
 /**
  * this is meant to be pooled or cached
@@ -198,6 +217,16 @@ public class BSONEncoder {
         else if (val instanceof Code) {
             putCode( name , (Code)val );
         }
+        else if (val instanceof DBRefBase) {
+            BSONObject temp = new BasicBSONObject();
+            temp.put("$ref", ((DBRefBase)val).getRef());
+            temp.put("$id", ((DBRefBase)val).getId());
+            putObject( name, temp );
+        }
+        else if ( val instanceof MinKey )
+            putMinKey( name );
+        else if ( val instanceof MaxKey )
+            putMaxKey( name );
         else if ( putSpecial( name , val ) ){
             // no-op
         }
@@ -310,23 +339,28 @@ public class BSONEncoder {
     }
     
     protected void putBinary( String name , byte[] data ){
+        putBinary( name, B_GENERAL, data );
+    }
+    
+    protected void putBinary( String name , Binary val ){
+        putBinary( name, val.getType(), val.getData() );        
+    }
+    
+    private void putBinary( String name , int type , byte[] data ){
         _put( BINARY , name );
-        _buf.writeInt( 4 + data.length );
-
-        _buf.write( B_BINARY );
-        _buf.writeInt( data.length );
+        int totalLen = data.length;
+        
+        if (type == B_BINARY)
+            totalLen += 4;
+        
+        _buf.writeInt( totalLen );
+        _buf.write( type );
+        if (type == B_BINARY)
+            _buf.writeInt( totalLen -4 );
         int before = _buf.getPosition();
         _buf.write( data );
         int after = _buf.getPosition();
-        
         com.mongodb.util.MyAsserts.assertEquals( after - before , data.length );
-    }
-
-    protected void putBinary( String name , Binary val ){
-        _put( BINARY , name );
-        _buf.writeInt( val.length() );
-        _buf.write( val.getType() );
-        _buf.write( val.getData() );
     }
     
     protected void putUUID( String name , UUID val ){
@@ -352,15 +386,24 @@ public class BSONEncoder {
 
     protected void putObjectId( String name , ObjectId oid ){
         _put( OID , name );
-        _buf.writeInt( oid._time() );
-        _buf.writeInt( oid._machine() );
-        _buf.writeInt( oid._inc() );
+        // according to spec, values should be stored big endian
+        _buf.writeIntBE( oid._time() );
+        _buf.writeIntBE( oid._machine() );
+        _buf.writeIntBE( oid._inc() );
     }
     
     private void putPattern( String name, Pattern p ) {
         _put( REGEX , name );
         _put( p.pattern() );
         _put( regexFlags( p.flags() ) );
+    }
+
+    private void putMinKey( String name ) {
+        _put( MINKEY , name );
+    }
+
+    private void putMaxKey( String name ) {
+        _put( MAXKEY , name );
     }
 
 

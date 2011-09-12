@@ -18,14 +18,23 @@
 
 package com.mongodb;
 
-import org.bson.types.*;
-import com.mongodb.util.*;
+import org.bson.types.BasicBSONList;
 
+import com.mongodb.util.JSON;
+
+/**
+ * a basic implementation of bson list that is mongo specific 
+ * @author antoine
+ */
 public class BasicDBList extends BasicBSONList implements DBObject {
 
-    /** Returns a JSON serialization of this object
+    private static final long serialVersionUID = -4415279469780082174L;
+
+    /**
+     * Returns a JSON serialization of this object
      * @return JSON serialization
      */    
+    @Override
     public String toString(){
         return JSON.serialize( this );
     }
@@ -38,5 +47,21 @@ public class BasicDBList extends BasicBSONList implements DBObject {
         _isPartialObject = true;
     }
 
+    public Object copy() {
+        // copy field values into new object
+        BasicDBList newobj = new BasicDBList();
+        // need to clone the sub obj
+        for (int i = 0; i < size(); ++i) {
+            Object val = get(i);
+            if (val instanceof BasicDBObject) {
+                val = ((BasicDBObject)val).copy();
+            } else if (val instanceof BasicDBList) {
+                val = ((BasicDBList)val).copy();
+            }
+            newobj.add(val);
+        }
+        return newobj;
+    }
+    
     private boolean _isPartialObject;
 }

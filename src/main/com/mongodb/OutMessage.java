@@ -18,17 +18,18 @@
 
 package com.mongodb;
 
-import java.util.*;
-import java.util.regex.*;
-import java.util.concurrent.atomic.*;
-import java.io.*;
+import static org.bson.BSON.EOO;
+import static org.bson.BSON.OBJECT;
+import static org.bson.BSON.REF;
 
-import com.mongodb.util.*;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import org.bson.*;
-import org.bson.io.*;
-import org.bson.types.*;
-import static org.bson.BSON.*;
+import org.bson.BSONEncoder;
+import org.bson.BSONObject;
+import org.bson.io.PoolOutputBuffer;
+import org.bson.types.ObjectId;
 
 class OutMessage extends BSONEncoder {
 
@@ -42,7 +43,7 @@ class OutMessage extends BSONEncoder {
 
     OutMessage( Mongo m ){
         _mongo = m;
-        _buffer = m._bufferPool.get();
+        _buffer = _mongo == null ? new PoolOutputBuffer() : _mongo._bufferPool.get();
         set( _buffer );
     }
 
@@ -81,7 +82,8 @@ class OutMessage extends BSONEncoder {
     void prepare(){
         _buffer.writeInt( 0 , _buffer.size() );
     }
-    
+
+    @SuppressWarnings("deprecation")
     protected boolean handleSpecialObjects( String name , BSONObject o ){
         
         if ( o == null )
@@ -102,6 +104,7 @@ class OutMessage extends BSONEncoder {
         return false;
     }
 
+    @SuppressWarnings("deprecation")
     protected boolean putSpecial( String name , Object val ){
         if ( val instanceof DBPointer ){
             DBPointer r = (DBPointer)val;
@@ -166,15 +169,33 @@ class OutMessage extends BSONEncoder {
     }
 
     void doneWithMessage(){
-        if ( _buffer != null ){
+        if ( _buffer != null && _mongo != null )
             _mongo._bufferPool.done( _buffer );
-            _buffer = null;
-            _mongo = null;
-        }
+        
+        _buffer = null;
+        _mongo = null;
     }
 
     boolean hasOption( int option ){
         return ( _queryOptions & option ) != 0;
+    }
+
+    int getId(){ 
+        return _id;
+    }
+
+    @Override
+    public int putObject(BSONObject o) {
+        // check max size
+        int sz = super.putObject(o);
+        if (_mongo != null) {
+            int maxsize = _mongo.getConnector().getMaxBsonObjectSize();
+            maxsize = Math.max(maxsize, Bytes.MAX_OBJECT_SIZE);
+            if (sz > maxsize) {
+                throw new MongoInternalException("DBObject of size " + sz + " is over Max BSON size " + _mongo.getMaxBsonObjectSize());
+            }
+        }
+        return sz;
     }
 
     private Mongo _mongo;

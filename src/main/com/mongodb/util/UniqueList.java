@@ -18,9 +18,12 @@
 
 package com.mongodb.util;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
 
 public class UniqueList<T> extends ArrayList<T> {
+
+    private static final long serialVersionUID = -4415279469780082174L;
 
     public boolean add( T t ){
         if ( contains( t ) )
